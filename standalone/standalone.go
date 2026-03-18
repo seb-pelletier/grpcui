@@ -43,7 +43,7 @@ const csrfHeaderName = "x-grpcui-csrf-token"
 //
 // The returned handler expects to serve resources from "/". If it will instead
 // be handling a sub-path (e.g. handling "/rpc-ui/") then use http.StripPrefix.
-func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescriptor, files []*desc.FileDescriptor, opts ...HandlerOption) http.Handler {
+func handlerInternal(connectedMethods []grpcui.ConnectedMethod, methods []*desc.MethodDescriptor, files []*desc.FileDescriptor, target string, opts ...HandlerOption) http.Handler {
 	uiOpts := &handlerOptions{
 		indexTmpl:      defaultIndexTemplate,
 		css:            grpcui.WebFormSampleCSS(),
@@ -99,7 +99,7 @@ func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescri
 		EmitDefaults:    uiOpts.emitDefaults,
 		Verbosity:       uiOpts.invokeVerbosity,
 	}
-	rpcInvokeHandler := http.StripPrefix("/invoke", grpcui.RPCInvokeHandlerWithOptions(ch, methods, invokeOpts))
+	rpcInvokeHandler := http.StripPrefix("/invoke", grpcui.RPCInvokeHandlerForServers(connectedMethods, invokeOpts))
 	mux.HandleFunc("/invoke/", func(w http.ResponseWriter, r *http.Request) {
 		// CSRF protection
 		c, _ := r.Cookie(csrfCookieName)
@@ -141,6 +141,57 @@ func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescri
 
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// ServerConfig describes one gRPC server to include in a multi-server UI.
+type ServerConfig struct {
+	// Target is the address displayed in the UI (e.g. "localhost:50051").
+	Target string
+	// Channel is the connection to this server.
+	Channel grpcdynamic.Channel
+	// Methods enumerates the RPC methods available on this server.
+	Methods []*desc.MethodDescriptor
+	// Files enumerates all proto files known for this server (used for
+	// google.protobuf.Any resolution).
+	Files []*desc.FileDescriptor
+}
+
+// HandlerMulti is like Handler but accepts methods from multiple gRPC servers.
+// All servers' services are merged into a single UI. Each RPC invocation is
+// automatically routed to the server the method was discovered from.
+func HandlerMulti(servers []ServerConfig, opts ...HandlerOption) http.Handler {
+	var connectedMethods []grpcui.ConnectedMethod
+	var allFiles []*desc.FileDescriptor
+	var allMethods []*desc.MethodDescriptor
+	targets := make([]string, 0, len(servers))
+	seenFiles := map[string]bool{}
+
+	for _, srv := range servers {
+		targets = append(targets, srv.Target)
+		for _, m := range srv.Methods {
+			connectedMethods = append(connectedMethods, grpcui.ConnectedMethod{Desc: m, Conn: srv.Channel})
+			allMethods = append(allMethods, m)
+		}
+		for _, f := range srv.Files {
+			if !seenFiles[f.GetName()] {
+				seenFiles[f.GetName()] = true
+				allFiles = append(allFiles, f)
+			}
+		}
+	}
+
+	combinedTarget := strings.Join(targets, ", ")
+	return handlerInternal(connectedMethods, allMethods, allFiles, combinedTarget, opts...)
+}
+
+// Handler returns an HTTP handler that provides a fully-functional gRPC web UI
+// for a single server. See HandlerMulti for multi-server support.
+func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescriptor, files []*desc.FileDescriptor, opts ...HandlerOption) http.Handler {
+	connected := make([]grpcui.ConnectedMethod, len(methods))
+	for i, m := range methods {
+		connected[i] = grpcui.ConnectedMethod{Desc: m, Conn: ch}
+	}
+	return handlerInternal(connected, methods, files, target, opts...)
 }
 
 var defaultIndexTemplate = template.Must(template.New("index.html").Parse(string(standalone.IndexTemplate())))

@@ -27,6 +27,15 @@ import (
 	"github.com/fullstorydev/grpcurl"
 )
 
+// ConnectedMethod pairs a method descriptor with the gRPC connection that
+// should be used to invoke it. This is the building block for multi-server
+// support: each method carries its own connection so the invoke handler can
+// route requests to the correct backend automatically.
+type ConnectedMethod struct {
+	Desc *desc.MethodDescriptor
+	Conn grpc.ClientConnInterface
+}
+
 // RPCInvokeHandler returns an HTTP handler that can be used to invoke RPCs. The
 // request includes request data, header metadata, and an optional timeout.
 //
@@ -72,6 +81,17 @@ type InvokeOptions struct {
 // accepts an additional argument, options. This can be used to add extra
 // request metadata to all RPCs invoked.
 func RPCInvokeHandlerWithOptions(ch grpc.ClientConnInterface, descs []*desc.MethodDescriptor, options InvokeOptions) http.Handler {
+	methods := make([]ConnectedMethod, len(descs))
+	for i, d := range descs {
+		methods[i] = ConnectedMethod{Desc: d, Conn: ch}
+	}
+	return RPCInvokeHandlerForServers(methods, options)
+}
+
+// RPCInvokeHandlerForServers is like RPCInvokeHandlerWithOptions but accepts
+// methods from multiple servers. Each ConnectedMethod carries its own
+// connection, allowing the handler to route each RPC to the correct backend.
+func RPCInvokeHandlerForServers(methods []ConnectedMethod, options InvokeOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.Header().Set("Allow", "POST")
@@ -89,15 +109,15 @@ func RPCInvokeHandlerWithOptions(ch grpc.ClientConnInterface, descs []*desc.Meth
 			method = method[1:]
 		}
 
-		for _, md := range descs {
-			if md.GetFullyQualifiedName() == method {
-				descSource, err := grpcurl.DescriptorSourceFromFileDescriptors(md.GetFile())
+		for _, cm := range methods {
+			if cm.Desc.GetFullyQualifiedName() == method {
+				descSource, err := grpcurl.DescriptorSourceFromFileDescriptors(cm.Desc.GetFile())
 				if err != nil {
 					http.Error(w, "Failed to create descriptor source: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
 				if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-					err := invokeRPCStream(r.Context(), method, ch, descSource, r.Header, r.Body, &options, w)
+					err := invokeRPCStream(r.Context(), method, cm.Conn, descSource, r.Header, r.Body, &options, w)
 					if err != nil {
 						if _, ok := err.(errReadFail); ok {
 							http.Error(w, "Failed to read request", 499)
@@ -112,7 +132,7 @@ func RPCInvokeHandlerWithOptions(ch grpc.ClientConnInterface, descs []*desc.Meth
 					return
 				}
 
-				results, err := invokeRPC(r.Context(), method, ch, descSource, r.Header, r.Body, &options)
+				results, err := invokeRPC(r.Context(), method, cm.Conn, descSource, r.Header, r.Body, &options)
 				if err != nil {
 					if _, ok := err.(errReadFail); ok {
 						http.Error(w, "Failed to read request", 499)

@@ -408,10 +408,10 @@ func main() {
 		fail(nil, "The -cert and -key arguments must be used together and both be present.")
 	}
 
-	if flags.NArg() != 1 {
-		fail(nil, "This program requires exactly one arg: the host:port of gRPC server.")
+	if flags.NArg() < 1 {
+		fail(nil, "This program requires at least one arg: the host:port of gRPC server.")
 	}
-	target := flags.Arg(0)
+	targets := flags.Args()
 
 	if len(protoset) > 0 && len(reflHeaders) > 0 {
 		warn("The -reflect-header argument is not used when -protoset files are used.")
@@ -562,13 +562,9 @@ func main() {
 	if isUnixSocket != nil && isUnixSocket() {
 		network = "unix"
 	}
-	cc, err := dial(dialCtx, network, target, creds, *connectFailFast, opts...)
-	if err != nil {
-		fail(err, "Failed to dial target host %q", target)
-	}
 
-	var descSource grpcurl.DescriptorSource
-	var refClient *grpcreflect.Client
+	// Build a shared file-based descriptor source (protoset / proto files) that
+	// applies to all targets. Reflection is set up per-target below.
 	var fileSource grpcurl.DescriptorSource
 	if len(protoset) > 0 {
 		var err error
@@ -583,53 +579,74 @@ func main() {
 			fail(err, "Failed to process proto source files.")
 		}
 	}
-	if reflection.val {
-		md := grpcurl.MetadataFromHeaders(append(addlHeaders, reflHeaders...))
-		refCtx := metadata.NewOutgoingContext(ctx, md)
-		refClient = grpcreflect.NewClientAuto(refCtx, cc)
-		refClient.AllowMissingFileDescriptors()
-		reflSource := grpcurl.DescriptorSourceFromServer(ctx, refClient)
-		if fileSource != nil {
-			descSource = compositeSource{reflSource, fileSource}
-		} else {
-			descSource = reflSource
-		}
-	} else {
-		descSource = fileSource
-	}
 
-	// arrange for the RPCs to be cleanly shutdown
+	// Dial every target and gather its methods.
+	var servers []standalone.ServerConfig
+	var allConns []*grpc.ClientConn
+	var allRefClients []*grpcreflect.Client
+
 	reset := func() {
-		if refClient != nil {
-			refClient.Reset()
-			refClient = nil
+		for _, rc := range allRefClients {
+			rc.Reset()
 		}
-		if cc != nil {
-			cc.Close()
-			cc = nil
+		allRefClients = nil
+		for _, c := range allConns {
+			c.Close()
 		}
+		allConns = nil
 	}
 	defer reset()
 	exit = func(code int) {
-		// since defers aren't run by os.Exit...
 		reset()
 		os.Exit(code)
 	}
 
-	methods, err := getMethods(descSource, configs)
-	if err != nil {
-		fail(err, "Failed to compute set of methods to expose")
-	}
-	allFiles, err := grpcurl.GetAllFiles(descSource)
-	if err != nil {
-		fail(err, "Failed to enumerate all proto files")
+	for _, target := range targets {
+		cc, err := dial(dialCtx, network, target, creds, *connectFailFast, opts...)
+		if err != nil {
+			fail(err, "Failed to dial target host %q", target)
+		}
+		allConns = append(allConns, cc)
+
+		var descSource grpcurl.DescriptorSource
+		if reflection.val {
+			md := grpcurl.MetadataFromHeaders(append(addlHeaders, reflHeaders...))
+			refCtx := metadata.NewOutgoingContext(ctx, md)
+			refClient := grpcreflect.NewClientAuto(refCtx, cc)
+			refClient.AllowMissingFileDescriptors()
+			allRefClients = append(allRefClients, refClient)
+			reflSource := grpcurl.DescriptorSourceFromServer(ctx, refClient)
+			if fileSource != nil {
+				descSource = compositeSource{reflSource, fileSource}
+			} else {
+				descSource = reflSource
+			}
+		} else {
+			descSource = fileSource
+		}
+
+		methods, err := getMethods(descSource, configs)
+		if err != nil {
+			fail(err, "Failed to compute set of methods for %q", target)
+		}
+		serverFiles, err := grpcurl.GetAllFiles(descSource)
+		if err != nil {
+			fail(err, "Failed to enumerate proto files for %q", target)
+		}
+
+		servers = append(servers, standalone.ServerConfig{
+			Target:  target,
+			Channel: cc,
+			Methods: methods,
+			Files:   serverFiles,
+		})
 	}
 
-	// can go ahead and close reflection client now
-	if refClient != nil {
-		refClient.Reset()
-		refClient = nil
+	// reflection clients are no longer needed after method discovery
+	for _, rc := range allRefClients {
+		rc.Reset()
 	}
+	allRefClients = nil
 
 	var handlerOpts []standalone.HandlerOption
 	if len(defHeaders) > 0 {
@@ -656,7 +673,7 @@ func main() {
 	handlerOpts = append(handlerOpts, configureAssets(otherAssets)...)
 	handlerOpts = append(handlerOpts, standalone.WithGRPCOptions(gRPCOptions))
 
-	handler := standalone.Handler(cc, target, methods, allFiles, handlerOpts...)
+	handler := standalone.HandlerMulti(servers, handlerOpts...)
 	if *maxTime > 0 {
 		timeout := floatSecondsToDuration(*maxTime)
 		// enforce the timeout by wrapping the handler and inserting a
