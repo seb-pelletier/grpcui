@@ -2,6 +2,7 @@ window.initGRPCForm = function(services, svcDescs, mtdDescs, invokeURI, metadata
 
     var descriptionsShown = false;
     var requestForm = $("#grpc-request-form");
+    var activeStreamAbort = null;
 
     function formServiceSelected(callback) {
         var svcName = $("#grpc-service").val();
@@ -2249,31 +2250,244 @@ window.initGRPCForm = function(services, svcDescs, mtdDescs, invokeURI, metadata
 
         const startTime = window.performance.now();
 
-        $.ajax(
-            {
-                type: "POST",
-                url: invokeURI + "/" + service + "." + method,
-                contentType: "application/json",
-                data: JSON.stringify({timeout_seconds: timeout, metadata: metadata, data: data}),
-            })
-            .done(function(responseData) {
-                var durationMs = window.performance.now() - startTime;
-                renderResponse(historyItem, durationMs, responseData);
-            })
-            .fail(function(failureData, status) {
+        const schema = requestForm.data("schema");
+        if (schema && schema.responseStream) {
+            invokeStreaming(service, method, timeout, metadata, data, historyItem, startTime);
+        } else {
+            $.ajax(
+                {
+                    type: "POST",
+                    url: invokeURI + "/" + service + "." + method,
+                    contentType: "application/json",
+                    data: JSON.stringify({timeout_seconds: timeout, metadata: metadata, data: data}),
+                })
+                .done(function(responseData) {
+                    var durationMs = window.performance.now() - startTime;
+                    renderResponse(historyItem, durationMs, responseData);
+                })
+                .fail(function(failureData, status) {
+                    addHistory({
+                        ...historyItem,
+                        durationMS: window.performance.now() - startTime,
+                        failureStatus: status,
+                    });
+                    alert("Unexpected error: " + status);
+                    if (debug) {
+                        console.trace(failureData.responseText);
+                    }
+                })
+                .always(function() {
+                    $(".grpc-invoke").prop("disabled", false);
+                });
+        }
+    }
+
+    async function invokeStreaming(service, method, timeout, metadata, data, historyItem, startTime) {
+        // Initialize response UI immediately so the user sees the response tab
+        $("#grpc-response-headers").html('<tr><td class="none">None</td></tr>');
+        $("#grpc-response-req-stats").hide();
+        $("#grpc-response-data").hide().empty();
+        $("#grpc-response-error").hide();
+        $("#grpc-response-trailers").html('<tr><td class="none">None</td></tr>');
+        var t = $("#grpc-request-response");
+        t.tabs("enable", 2);
+        t.tabs("option", "active", 2);
+
+        // Read CSRF token from cookie (mirrors the approach in index-template.html)
+        var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)_grpcui_csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+        var fetchHeaders = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        };
+        if (csrfToken) {
+            fetchHeaders["x-grpcui-csrf-token"] = csrfToken;
+        }
+
+        var allResponses = [];
+        var finalResponseData = {headers: [], responses: [], error: null, trailers: [], requests: null};
+
+        activeStreamAbort = new AbortController();
+
+        try {
+            const response = await fetch(invokeURI + "/" + service + "." + method, {
+                method: "POST",
+                headers: fetchHeaders,
+                body: JSON.stringify({timeout_seconds: timeout, metadata: metadata, data: data}),
+                signal: activeStreamAbort.signal,
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error("HTTP " + response.status + ": " + text);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, {stream: true});
+
+                // SSE events are separated by blank lines (\n\n)
+                const events = buffer.split("\n\n");
+                buffer = events.pop(); // last element may be an incomplete event
+
+                for (const eventStr of events) {
+                    if (!eventStr.trim()) continue;
+
+                    let eventType = "";
+                    let eventData = "";
+                    for (const line of eventStr.split("\n")) {
+                        if (line.startsWith("event: ")) {
+                            eventType = line.slice(7);
+                        } else if (line.startsWith("data: ")) {
+                            eventData = line.slice(6);
+                        }
+                    }
+                    if (!eventType || !eventData) continue;
+
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(eventData);
+                    } catch (e) {
+                        if (debug) console.error("Failed to parse SSE data:", eventData, e);
+                        continue;
+                    }
+
+                    if (eventType === "headers") {
+                        finalResponseData.headers = parsed;
+                        if (parsed instanceof Array && parsed.length > 0) {
+                            var hdrs = $("#grpc-response-headers");
+                            hdrs.empty();
+                            for (var i = 0; i < parsed.length; i++) {
+                                var hdrRow = $("<tr>");
+                                hdrs.append(hdrRow);
+                                var hdrCell = $("<td>");
+                                hdrCell.text(parsed[i].name);
+                                hdrRow.append(hdrCell);
+                                hdrCell = $("<td>");
+                                hdrCell.text(parsed[i].value);
+                                hdrRow.append(hdrCell);
+                            }
+                        }
+                    } else if (eventType === "response") {
+                        allResponses.push(parsed);
+                        var dataDiv = $("#grpc-response-data");
+                        dataDiv.show();
+                        if (timeout === undefined) {
+                            // Reuse existing textarea to avoid visual reset
+                            var existing = dataDiv.find("textarea.grpc-response-textarea").last();
+                            if (!parsed.isError && existing.length > 0) {
+                                existing.val(JSON.stringify(parsed.message, null, 2));
+                            } else {
+                                dataDiv.empty();
+                                var container = $("<div>");
+                                if (parsed.isError) {
+                                    container.html('<div class="error">Server error processing message #' + allResponses.length + "</div>");
+                                } else {
+                                    var textArea = $("<textarea>");
+                                    textArea.val(JSON.stringify(parsed.message, null, 2));
+                                    textArea.addClass("grpc-response-textarea");
+                                    container.append(textArea);
+                                }
+                                dataDiv.append(container);
+                            }
+                        } else {
+                            var container = $("<div>");
+                            if (parsed.isError) {
+                                container.html('<div class="error">Server error processing message #' + allResponses.length + "</div>");
+                            } else {
+                                var textArea = $("<textarea>");
+                                textArea.val(JSON.stringify(parsed.message, null, 2));
+                                textArea.addClass("grpc-response-textarea");
+                                container.append(textArea);
+                            }
+                            dataDiv.append(container);
+                        }
+                    } else if (eventType === "trailers") {
+                        finalResponseData.responses = allResponses;
+                        finalResponseData.error = parsed.error;
+                        finalResponseData.trailers = parsed.trailers;
+                        finalResponseData.requests = parsed.requests;
+
+                        if (parsed.requests && parsed.requests.total !== parsed.requests.sent) {
+                            var stats = $("#grpc-response-req-stats");
+                            stats.show();
+                            stats.text("Only " + parsed.requests.sent + " of " + parsed.requests.total + " requests accepted");
+                        }
+
+                        if (parsed.error) {
+                            $("#grpc-response-error").show();
+                            $("#grpc-response-error-desc").text(parsed.error.name);
+                            $("#grpc-response-error-num").text("(" + parsed.error.code + ")");
+                            if (parsed.error.message !== parsed.error.name) {
+                                var errMsg = $("#grpc-response-error-msg");
+                                errMsg.show();
+                                errMsg.text(parsed.error.message);
+                            } else {
+                                $("#grpc-response-error-msg").hide();
+                            }
+                            if (renderMessages($("#grpc-response-error-details"), parsed.error.details)) {
+                                $("#grpc-response-error-details-container").show();
+                            } else {
+                                $("#grpc-response-error-details-container").hide();
+                            }
+                        } else {
+                            $("#grpc-response-error").hide();
+                        }
+
+                        if (parsed.trailers instanceof Array && parsed.trailers.length > 0) {
+                            var tlrs = $("#grpc-response-trailers");
+                            tlrs.empty();
+                            for (var j = 0; j < parsed.trailers.length; j++) {
+                                var tlrRow = $("<tr>");
+                                tlrs.append(tlrRow);
+                                var tlrCell = $("<td>");
+                                tlrCell.text(parsed.trailers[j].name);
+                                tlrRow.append(tlrCell);
+                                tlrCell = $("<td>");
+                                tlrCell.text(parsed.trailers[j].value);
+                                tlrRow.append(tlrCell);
+                            }
+                        }
+                    } else if (eventType === "error") {
+                        // transport-level error (no trailers delivered)
+                        $("#grpc-response-error").show();
+                        $("#grpc-response-error-desc").text("Transport error");
+                        $("#grpc-response-error-num").text("");
+                        var errMsg2 = $("#grpc-response-error-msg");
+                        errMsg2.show();
+                        errMsg2.text(parsed.message || "Unknown error");
+                        $("#grpc-response-error-msg").hide();
+                    }
+                }
+            }
+
+            addHistory({
+                ...historyItem,
+                durationMS: window.performance.now() - startTime,
+                responseData: historyResponseData(finalResponseData),
+            });
+        } catch (err) {
+            if (err.name === "AbortError") {
+                // Stream was intentionally cancelled (e.g. user switched tabs)
+            } else {
                 addHistory({
                     ...historyItem,
                     durationMS: window.performance.now() - startTime,
-                    failureStatus: status,
+                    failureStatus: err.message,
                 });
-                alert("Unexpected error: " + status);
+                alert("Unexpected error: " + err.message);
                 if (debug) {
-                    console.trace(failureData.responseText);
+                    console.trace(err);
                 }
-            })
-            .always(function() {
-                $(".grpc-invoke").prop("disabled", false);
-            });
+            }
+        } finally {
+            activeStreamAbort = null;
+            $(".grpc-invoke").prop("disabled", false);
+        }
     }
 
     function renderResponse(historyItem, durationMs, responseData) {
@@ -2850,8 +3064,11 @@ window.initGRPCForm = function(services, svcDescs, mtdDescs, invokeURI, metadata
 
     $("#grpc-request-response").tabs(
         {
-            beforeActivate: function(e) {
+            beforeActivate: function(e, ui) {
                 onlyIfValid(e);
+                if (ui.oldPanel && ui.oldPanel.attr("id") === "grpc-response-tab" && activeStreamAbort) {
+                    activeStreamAbort.abort();
+                }
             }
         });
 
