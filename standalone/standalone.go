@@ -194,7 +194,22 @@ func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescri
 	return handlerInternal(connected, methods, files, target, opts...)
 }
 
-var defaultIndexTemplate = template.Must(template.New("index.html").Parse(string(standalone.IndexTemplate())))
+var defaultIndexTemplate = template.Must(
+	template.New("index.html").
+		Funcs(template.FuncMap{
+			"splitTarget": func(t string) []string {
+				parts := strings.Split(t, ", ")
+				result := make([]string, 0, len(parts))
+				for _, p := range parts {
+					if p = strings.TrimSpace(p); p != "" {
+						result = append(result, p)
+					}
+				}
+				return result
+			},
+		}).
+		Parse(string(standalone.IndexTemplate())),
+)
 
 func getIndexContents(tmpl *template.Template, target string, webFormHTML []byte, addlResources []*resource) []byte {
 	addlHTML := make([]template.HTML, 0, len(addlResources))

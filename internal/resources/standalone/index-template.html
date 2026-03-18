@@ -12,6 +12,9 @@
     <link rel="stylesheet" href="grpc-web-form.css">
     <script src="grpc-web-form.js"></script>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+
     <style>
     * {
       box-sizing: border-box;
@@ -24,7 +27,7 @@
     body {
       margin: 0;
       padding: 0;
-      font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-family: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
       font-size: 14px;
       line-height: 20px;
       color: #333;
@@ -54,43 +57,85 @@
 
     .full-width-heading {
       width: 100%;
-      background-color: #186064;
+      background: #1c344f;
     }
 
     .heading {
       max-width: 2560px;
       margin: 0;
-      padding: 32px 24px;
-      color: white;
-      background: linear-gradient(to bottom right, #0C4348, #317178, #5F8C8C)
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
     }
 
-    .heading h1 {
-      font-weight: normal;
-      font-size: 35px;
-      margin: 0 0 12px 0;
-      padding: 0;
+    .heading-logo {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-shrink: 0;
     }
 
-    .heading h2 {
-      font-weight: normal;
-      font-size: 24px;
-      color: #c0f0ff;
-      margin: 0;
-      padding: 0;
+    .heading-logo svg {
+      height: 24px;
+      width: 24px;
+      fill: white;
+      flex-shrink: 0;
     }
 
-    .target {
-      font-style: italic;
-      color: #9ff;
-      padding-left: 4px;
+    .heading-wordmark {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.2px;
+      line-height: 1;
     }
 
-    img.grpc-logo {
-      width: 100px;
-      margin-bottom: 6px;
-      margin-right: 8px;
-      margin-top: 3px;
+    .heading-title {
+      font-size: 13px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.45);
+      flex-shrink: 0;
+    }
+
+    .heading-divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255,255,255,0.18);
+      flex-shrink: 0;
+    }
+
+    .heading-targets {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .target-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(25,124,224,0.22);
+      border: 1px solid rgba(25,124,224,0.45);
+      border-radius: 5px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #93c5fd;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      white-space: nowrap;
+    }
+
+    .target-chip::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+      flex-shrink: 0;
     }
 
     #grpc-form {
@@ -115,9 +160,19 @@
   <body>
     <div class="full-width-heading">
       <div class="heading">
-        <h1><img class="grpc-logo" src="grpc-logo.png" alt="GRPC"/> Web UI</h1>
+        <div class="heading-logo">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M28.2474 7.30774L28.2915 7.34436C29.6159 8.45585 29.8023 10.4522 28.707 11.7953L18.5357 24.2707C17.9416 24.9993 17.0655 25.4173 16.133 25.4173C16.1039 25.4173 16.0751 25.4155 16.0464 25.4137C16.0309 25.4128 16.0153 25.4118 15.9998 25.4111C15.9851 25.4118 15.9704 25.4127 15.9557 25.4136C15.927 25.4153 15.8983 25.417 15.8695 25.417C14.9363 25.417 14.0603 24.9993 13.4665 24.2707L3.29485 11.7953C2.76416 11.1443 2.51521 10.3233 2.59382 9.4828C2.6723 8.64232 3.06875 7.88287 3.71023 7.34472L3.75522 7.30702C4.3123 6.84007 5.017 6.58252 5.73934 6.58252C6.67251 6.58252 7.54815 7.00024 8.14228 7.72907L16.0012 17.3677L23.8595 7.72907C24.4539 7.00048 25.3295 6.58276 26.2627 6.58276C26.985 6.58276 27.6896 6.84007 28.2474 7.30774ZM5.80364 11.1491C5.05763 11.1491 4.45296 10.5354 4.45296 9.77889C4.45296 9.02221 5.05763 8.40901 5.80364 8.40901C6.54954 8.40901 7.15409 9.02221 7.15409 9.77889C7.15409 10.5354 6.54954 11.1491 5.80364 11.1491ZM24.8627 9.77889C24.8627 10.5354 25.4678 11.1491 26.2133 11.1491C26.9591 11.1491 27.5639 10.5354 27.5639 9.77889C27.5639 9.02221 26.9591 8.40901 26.2133 8.40901C25.4678 8.40901 24.8627 9.02221 24.8627 9.77889ZM14.5959 21.591C14.5959 22.3476 15.2007 22.9608 15.9466 22.9608C16.6924 22.9608 17.297 22.3476 17.297 21.591C17.297 20.8344 16.6924 20.2211 15.9466 20.2211C15.2007 20.2211 14.5959 20.8344 14.5959 21.591Z" fill="white"/></svg>
+          <span class="heading-wordmark">vention</span>
+        </div>
+        <div class="heading-divider"></div>
+        <span class="heading-title">gRPC Web UI</span>
         {{ if not (eq .Target "") }}
-          <h2>Connected to <span class="target">{{ .Target }}</span></h2>
+          <div class="heading-divider"></div>
+          <div class="heading-targets">
+            {{ range splitTarget .Target }}
+              <span class="target-chip">{{ . }}</span>
+            {{ end }}
+          </div>
         {{ end }}
       </div>
     </div>
