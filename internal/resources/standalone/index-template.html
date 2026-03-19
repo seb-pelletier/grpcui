@@ -135,9 +135,13 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #34d399;
+      background: #94a3b8;
       flex-shrink: 0;
+      transition: background 0.3s;
     }
+
+    .target-chip.status-up::before   { background: #34d399; }
+    .target-chip.status-down::before { background: #f87171; }
 
     #grpc-form {
       margin: 0;
@@ -157,6 +161,26 @@
     {{ range .AddlResources }}
       {{ . }}
     {{ end }}
+    <script>
+    (function() {
+      function pollHealth() {
+        fetch('/health?_=' + Date.now())
+          .then(function(r) { return r.json(); })
+          .then(function(results) {
+            var chips = document.querySelectorAll('.target-chip');
+            results.forEach(function(r, i) {
+              if (chips[i]) {
+                chips[i].classList.remove('status-up', 'status-down');
+                chips[i].classList.add(r.ok ? 'status-up' : 'status-down');
+              }
+            });
+          })
+          .catch(function() {});
+      }
+      pollHealth();
+      setInterval(pollHealth, 5000);
+    })();
+    </script>
   </head>
   <body>
     <div class="full-width-heading">

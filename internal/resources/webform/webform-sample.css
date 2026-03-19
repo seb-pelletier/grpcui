@@ -3,18 +3,28 @@
   --blue:        #197ce0;
   --blue-dark:   #1569c2;
   --blue-dim:    rgba(25, 124, 224, 0.12);
+  --blue-glow:   rgba(25, 124, 224, 0.35);
+  --blue-tint:   #eff6ff;
+  --blue-select: #dbeafe;
+  --blue-accent: #bfdbfe;
+  --blue-vivid:  #1d4ed8;
   --navy:        #1c344f;
   --bg:          #f3f4f6;
-  --surface:     #ffffff;
+  --surface:     #f0f2f5;
   --border:      #e5e7eb;
   --border-dark: #d1d5db;
   --text-1:      #111827;
   --text-2:      #374151;
   --text-3:      #6b7280;
   --text-4:      #9ca3af;
+  --white:       #ffffff;
   --red:         #dc2626;
+  --red-light:   #ef4444;
+  --red-dark:    #b91c1c;
+  --red-dim:     rgba(220, 38, 38, 0.1);
   --red-bg:      #fef2f2;
   --red-border:  #fecaca;
+  --amber:       #d97706;
   --amber-bg:    #fffbeb;
   --amber-border:#fde68a;
   --amber-text:  #92400e;
@@ -24,6 +34,7 @@
   --code-bg:     #1e293b;
   --code-text:   #e2e8f0;
   --code-border: #334155;
+  --tooltip-bg:  #0f172a;
   --mono:        "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --sans:        Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --radius:      8px;
@@ -101,10 +112,6 @@ label.grpc-form-label {
   outline: none;
   cursor: pointer;
   transition: border-color .15s, box-shadow .15s;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
 }
 
 .grpc-desc select:focus {
@@ -199,10 +206,10 @@ button#grpc-descriptions-toggle:hover {
   transition: background .1s, color .1s;
 }
 
-#grpc-request-examples li:hover { background: #eff6ff; color: var(--blue); }
+#grpc-request-examples li:hover { background: var(--blue-tint); color: var(--blue); }
 
 #grpc-request-examples .ui-selected {
-  background: #dbeafe;
+  background: var(--blue-select);
   color: var(--navy);
   font-weight: 500;
 }
@@ -266,11 +273,12 @@ button#grpc-descriptions-toggle:hover {
   border-bottom-color: var(--blue) !important;
 }
 
-#grpc-request-response .ui-tabs-nav li.ui-state-disabled a,
-#grpc-request-response .ui-tabs-nav li.ui-state-disabled .ui-tabs-anchor {
-  color: var(--text-4) !important;
-  cursor: not-allowed;
+li[id="#grpc-response-tab-button"].ui-state-disabled a,
+li[id="#grpc-response-tab-button"].ui-state-disabled .ui-tabs-anchor {
+  color: var(--text-3) !important;
+  cursor: default;
   border-bottom-color: transparent !important;
+  pointer-events: none;
 }
 
 /* ─── Tab panel ───────────────────────────────────────────────────────────────── */
@@ -300,7 +308,7 @@ button#grpc-descriptions-toggle:hover {
   transition: background .15s, box-shadow .15s, border-color .15s;
   border: 1px solid var(--blue);
   background: var(--blue);
-  color: #fff;
+  color: var(--white);
   line-height: 1;
   white-space: nowrap;
 }
@@ -308,7 +316,7 @@ button#grpc-descriptions-toggle:hover {
 #grpc-form button:hover:not(:disabled) {
   background: var(--blue-dark);
   border-color: var(--blue-dark);
-  box-shadow: 0 2px 8px rgba(25,124,224,0.35);
+  box-shadow: 0 2px 8px var(--blue-glow);
 }
 
 #grpc-form button:disabled {
@@ -368,7 +376,7 @@ button#grpc-history-save {
 button#grpc-history-save:hover { background: var(--bg); box-shadow: none; }
 
 /* ─── Form inputs (shared) ────────────────────────────────────────────────────── */
-#grpc-form input[type=text],
+#grpc-form input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]),
 #grpc-form select,
 #grpc-form textarea {
   font-family: var(--sans);
@@ -381,14 +389,14 @@ button#grpc-history-save:hover { background: var(--bg); box-shadow: none; }
   transition: border-color .15s, box-shadow .15s;
 }
 
-#grpc-form input[type=text]:focus,
+#grpc-form input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]):focus,
 #grpc-form select:focus,
 #grpc-form textarea:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px var(--blue-dim);
 }
 
-#grpc-form input[type=text]:disabled,
+#grpc-form input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]):disabled,
 #grpc-form select:disabled,
 #grpc-form textarea:disabled {
   background: var(--bg);
@@ -460,7 +468,7 @@ table#grpc-request-metadata-form {
 
 #grpc-request-timeout input.invalid-input {
   border: 1px solid var(--red) !important;
-  box-shadow: 0 0 0 3px rgba(220,38,38,.12) !important;
+  box-shadow: 0 0 0 3px var(--red-dim) !important;
 }
 
 /* ─── Request form (proto fields) ────────────────────────────────────────────── */
@@ -512,7 +520,7 @@ table#grpc-request-metadata-form {
   font-style: normal;
 }
 
-#grpc-request-form input[type=text] {
+#grpc-request-form input:not([type=checkbox]):not([type=radio]):not([type=file]) {
   padding: 6px 9px;
   font-family: var(--mono);
   font-size: 13px;
@@ -566,7 +574,7 @@ table#grpc-request-metadata-form {
 #grpc-request-form label.disabled { color: var(--text-4); }
 
 #grpc-request-form .unknown {
-  color: #d97706;
+  color: var(--amber);
   font-style: italic;
   font-size: 12px;
 }
@@ -576,7 +584,7 @@ table#grpc-request-metadata-form {
 #grpc-request-form .duration-unit { font-style: italic; margin-left: 4px; color: var(--text-3); }
 
 #grpc-request-form div.oneof {
-  border-left: 2px solid #bfdbfe;
+  border-left: 2px solid var(--blue-accent);
   padding: 8px 0 8px 14px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
@@ -590,7 +598,7 @@ table#grpc-request-metadata-form {
 #grpc-request-form textarea.invalid-input {
   border: 1px solid var(--red) !important;
   background: var(--red-bg) !important;
-  box-shadow: 0 0 0 3px rgba(220,38,38,.1) !important;
+  box-shadow: 0 0 0 3px var(--red-dim) !important;
 }
 
 #grpc-request-form div.invalid-input input { background: var(--red-bg); }
@@ -632,8 +640,8 @@ table#grpc-request-metadata-form {
   font-family: var(--mono);
   font-size: 12px;
   max-width: none;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--tooltip-bg);
+  color: var(--code-text);
   border: none;
   border-radius: var(--radius-sm);
   padding: 8px 12px;
@@ -796,7 +804,7 @@ textarea.grpc-response-textarea:focus {
 #grpc-response-error #grpc-response-error-num {
   font-weight: 400;
   font-size: 13px;
-  color: #ef4444;
+  color: var(--red-light);
 }
 
 #grpc-response-error #grpc-response-error-msg {
@@ -804,7 +812,7 @@ textarea.grpc-response-textarea:focus {
   margin-top: 7px;
   font-family: var(--mono);
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--red-dark);
   line-height: 1.5;
 }
 
@@ -837,7 +845,7 @@ textarea.grpc-response-textarea:focus {
   text-align: left;
 }
 
-#grpc-history-list .history-item-header:hover { background: #eff6ff; }
+#grpc-history-list .history-item-header:hover { background: var(--blue-tint); }
 #grpc-history-list .history-item-header.ui-state-active { color: var(--text-1); }
 
 #grpc-history-list > .ui-accordion:first-child {
@@ -940,74 +948,40 @@ textarea.grpc-response-textarea:focus {
     --text-2:      #cbd5e1;
     --text-3:      #94a3b8;
     --text-4:      #475569;
+    --white:       #f1f5f9;
     --navy:        #93c5fd;
+    --blue-tint:   #0c1a2e;
+    --blue-select: #1e3a5f;
+    --blue-accent: #1e40af;
+    --tooltip-bg:  #0f172a;
     --red-bg:      #1f0a0a;
     --red-border:  #7f1d1d;
+    --red-light:   #f87171;
+    --red-dark:    #fca5a5;
     --green-bg:    #052e16;
     --green-border:#14532d;
     --amber-bg:    #1c1200;
     --amber-border:#78350f;
   }
 
-  body { background: #0f172a; color: #f1f5f9; }
+  body { background: var(--bg); color: var(--text-1); }
 
-  .grpc-desc { background: #1e293b; border-bottom-color: #334155; }
-  .grpc-desc select { background: #1e293b; border-color: #475569; color: #f1f5f9;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  }
-  .grpc-desc pre { color: #94a3b8; }
-  button#grpc-descriptions-toggle { background: #1e293b; border-color: #475569; color: #94a3b8; }
-
-  #grpc-form input[type=text],
-  #grpc-form select,
-  #grpc-form textarea { background: #1e293b; border-color: #475569; color: #f1f5f9; }
-
-  #grpc-form input[type=text]:disabled,
-  #grpc-form select:disabled,
-  #grpc-form textarea:disabled { background: #0f172a; color: #475569; border-color: #334155; }
-
-  #grpc-form #grpc-request-form div.input_container { background: #0f172a; border-color: #334155; }
-
-  #grpc-request-response .grpc-tabcontent.ui-tabs-panel { background: #1e293b !important; border-color: #334155 !important; }
-  #grpc-request-response ul.ui-tabs-nav { border-bottom-color: #334155 !important; }
-  #grpc-request-response .ui-tabs-nav li.ui-state-disabled a { color: #334155 !important; }
-
+  /* Non-invoke utility buttons get a surface-tone bg in dark mode */
   #grpc-form button:not(.grpc-invoke):not(#grpc-history-clear):not(#grpc-history-save):not(.grpc-request-table > tr td > button) {
-    background: #334155; border-color: #475569; color: #f1f5f9;
+    background: var(--border); border-color: var(--border-dark); color: var(--text-1);
   }
 
-  button#grpc-history-clear, button#grpc-history-save,
-  #grpc-form .grpc-request-table button,
-  #grpc-form #grpc-request-form div.input_container button { background: #1e293b; border-color: #475569; color: #cbd5e1; }
-
-  .grpc-metadata-table { border-color: #334155; }
-  .grpc-metadata-table th { background: #0f172a; border-color: #334155; }
-  .grpc-metadata-table td { border-color: #334155; }
-
-  #grpc-request-metadata-form th { background: #0f172a; border-color: #334155; }
-  #grpc-request-examples-container { background: #1e293b; border-color: #334155; }
-  #grpc-request-examples-container h3 { border-color: #334155; }
-  #grpc-request-examples li:hover { background: #0c1a2e; }
-  #grpc-request-examples .ui-selected { background: #1e3a5f; color: #93c5fd; }
-
-  #grpc-history-list .history-item-header { background: #1e293b; border-color: #334155; }
-  #grpc-history-list .history-item-header:hover { background: #0c1a2e; }
-  #grpc-history-list .history-item-panel { background: #0f172a; border-color: #334155; }
-  #grpc-history-list > .ui-accordion:first-child { border-color: #334155; }
-  #grpc-history-list .history-item-panel .history-detail-request .request-json { background: #0f172a; }
-
-  #grpc-response-error { background: #1f0a0a; border-color: #7f1d1d; }
-
-  .ui-datepicker { background: #1e293b !important; border-color: #334155 !important; color: #f1f5f9 !important; }
-  .ui-datepicker-header { background: #0f172a !important; border-color: #334155 !important; color: #f1f5f9 !important; }
-  .ui-datepicker-calendar { background: #1e293b !important; }
-  .ui-datepicker-calendar th { background: #0f172a !important; color: #94a3b8 !important; border-color: #334155 !important; }
-  .ui-datepicker-calendar td { background: #1e293b !important; border-color: #334155 !important; }
-  .ui-datepicker-calendar td a { color: #f1f5f9 !important; background: transparent !important; border: none !important; }
-  .ui-datepicker-calendar td a:hover { background: #334155 !important; }
-  .ui-datepicker-calendar .ui-datepicker-today a { background: #1d4ed8 !important; color: #fff !important; }
-  .ui-datepicker-buttonpane { background: #0f172a !important; border-color: #334155 !important; }
-  .ui-datepicker-buttonpane button { background: #1e293b !important; border-color: #334155 !important; color: #f1f5f9 !important; }
-  .ui-widget-content { background: #1e293b !important; }
-  hr { border-color: #334155 !important; }
+  /* Datepicker dark theme */
+  .ui-datepicker { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text-1) !important; }
+  .ui-datepicker-header { background: var(--bg) !important; border-color: var(--border) !important; color: var(--text-1) !important; }
+  .ui-datepicker-calendar { background: var(--surface) !important; }
+  .ui-datepicker-calendar th { background: var(--bg) !important; color: var(--text-3) !important; border-color: var(--border) !important; }
+  .ui-datepicker-calendar td { background: var(--surface) !important; border-color: var(--border) !important; }
+  .ui-datepicker-calendar td a { color: var(--text-1) !important; background: transparent !important; border: none !important; }
+  .ui-datepicker-calendar td a:hover { background: var(--border) !important; }
+  .ui-datepicker-calendar .ui-datepicker-today a { background: var(--blue-vivid) !important; color: var(--white) !important; }
+  .ui-datepicker-buttonpane { background: var(--bg) !important; border-color: var(--border) !important; }
+  .ui-datepicker-buttonpane button { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text-1) !important; }
+  .ui-widget-content { background: var(--surface) !important; }
+  hr { border-color: var(--border) !important; }
 }

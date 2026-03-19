@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,10 +17,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jhump/protoreflect/desc"
 	"github.com/jhump/protoreflect/dynamic/grpcdynamic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 
 	"github.com/fullstorydev/grpcui"
 	"github.com/fullstorydev/grpcui/internal/resources/standalone"
@@ -43,7 +47,25 @@ const csrfHeaderName = "x-grpcui-csrf-token"
 //
 // The returned handler expects to serve resources from "/". If it will instead
 // be handling a sub-path (e.g. handling "/rpc-ui/") then use http.StripPrefix.
-func handlerInternal(connectedMethods []grpcui.ConnectedMethod, methods []*desc.MethodDescriptor, files []*desc.FileDescriptor, target string, opts ...HandlerOption) http.Handler {
+// serverTarget pairs a display address with its live gRPC channel.
+type serverTarget struct {
+	target string
+	conn   grpcdynamic.Channel
+}
+
+// stateChecker is implemented by *grpc.ClientConn.
+type stateChecker interface {
+	GetState() connectivity.State
+	Connect()
+	WaitForStateChange(ctx context.Context, sourceState connectivity.State) bool
+}
+
+func handlerInternal(connectedMethods []grpcui.ConnectedMethod, methods []*desc.MethodDescriptor, files []*desc.FileDescriptor, servers []serverTarget, opts ...HandlerOption) http.Handler {
+	targets := make([]string, len(servers))
+	for i, s := range servers {
+		targets[i] = s.target
+	}
+	target := strings.Join(targets, ", ")
 	uiOpts := &handlerOptions{
 		indexTmpl:      defaultIndexTemplate,
 		css:            grpcui.WebFormSampleCSS(),
@@ -114,6 +136,40 @@ func handlerInternal(connectedMethods []grpcui.ConnectedMethod, methods []*desc.
 	rpcMetadataHandler := grpcui.RPCMetadataHandler(methods, files)
 	mux.Handle("/metadata", rpcMetadataHandler)
 
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		type targetStatus struct {
+			Target string `json:"target"`
+			OK     bool   `json:"ok"`
+		}
+		results := make([]targetStatus, len(servers))
+		var wg sync.WaitGroup
+		for i, srv := range servers {
+			wg.Add(1)
+			go func(idx int, s serverTarget) {
+				defer wg.Done()
+				ok := false
+				if sc, canCheck := s.conn.(stateChecker); canCheck {
+					// Trigger a reconnect attempt if the connection is idle.
+					sc.Connect()
+					state := sc.GetState()
+					// If still connecting, wait up to 2s for it to settle.
+					if state == connectivity.Connecting || state == connectivity.Idle {
+						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+						defer cancel()
+						sc.WaitForStateChange(ctx, state)
+						state = sc.GetState()
+					}
+					ok = state == connectivity.Ready
+				}
+				results[idx] = targetStatus{Target: s.target, OK: ok}
+			}(i, srv)
+		}
+		wg.Wait()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(results)
+	})
+
 	mux.HandleFunc("/examples", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(200)
@@ -163,11 +219,11 @@ func HandlerMulti(servers []ServerConfig, opts ...HandlerOption) http.Handler {
 	var connectedMethods []grpcui.ConnectedMethod
 	var allFiles []*desc.FileDescriptor
 	var allMethods []*desc.MethodDescriptor
-	targets := make([]string, 0, len(servers))
+	srvTargets := make([]serverTarget, 0, len(servers))
 	seenFiles := map[string]bool{}
 
 	for _, srv := range servers {
-		targets = append(targets, srv.Target)
+		srvTargets = append(srvTargets, serverTarget{target: srv.Target, conn: srv.Channel})
 		for _, m := range srv.Methods {
 			connectedMethods = append(connectedMethods, grpcui.ConnectedMethod{Desc: m, Conn: srv.Channel})
 			allMethods = append(allMethods, m)
@@ -180,8 +236,7 @@ func HandlerMulti(servers []ServerConfig, opts ...HandlerOption) http.Handler {
 		}
 	}
 
-	combinedTarget := strings.Join(targets, ", ")
-	return handlerInternal(connectedMethods, allMethods, allFiles, combinedTarget, opts...)
+	return handlerInternal(connectedMethods, allMethods, allFiles, srvTargets, opts...)
 }
 
 // Handler returns an HTTP handler that provides a fully-functional gRPC web UI
@@ -191,7 +246,7 @@ func Handler(ch grpcdynamic.Channel, target string, methods []*desc.MethodDescri
 	for i, m := range methods {
 		connected[i] = grpcui.ConnectedMethod{Desc: m, Conn: ch}
 	}
-	return handlerInternal(connected, methods, files, target, opts...)
+	return handlerInternal(connected, methods, files, []serverTarget{{target: target, conn: ch}}, opts...)
 }
 
 var defaultIndexTemplate = template.Must(

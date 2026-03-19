@@ -1,4 +1,5 @@
 dist/
+build/
 VERSION
 .idea/
 *.iml
