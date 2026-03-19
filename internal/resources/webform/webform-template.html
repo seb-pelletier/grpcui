@@ -1,42 +1,32 @@
 <div id="grpc-form">
-  <table class="grpc-desc">
-    <tr>
-      <td>
-        <table id="grpc-desc-selects">
-          <!-- service -->
-          <tr>
-            <td>
-              <div class="grpc-form-label">Service name:</div>
-            </td>
-            <td id="grpc-service-select">
-              <select name="grpc-service" id="grpc-service">
-                {{ range .Services }}
-                <option value="{{.}}">{{.}}</option>
-                {{ end }}
-              </select>
-            </td>
-          </tr>
-          <!-- method -->
-          <tr>
-            <td>
-              <div class="grpc-form-label">Method name:</div>
-            </td>
-            <td id="grpc-method-select">
-              <select name="grpc-method" id="grpc-method">
-                <!-- populated by JavaScript when grpc-service is selected -->
-              </select>
-            </td>
-          </tr>
-        </table>
-      </td>
-      <td id="grpc-descriptions">
-        <button id="grpc-descriptions-toggle">»</button>
-        <pre id="grpc-service-description"></pre>
-        <pre id="grpc-method-description"></pre>
-        <pre id="grpc-service-description-end"></pre>
-      </td>
-    </tr>
-  </table>
+  <div class="grpc-desc">
+    <div class="grpc-desc-selects">
+      <div class="grpc-select-group">
+        <label class="grpc-form-label" for="grpc-service">Service</label>
+        <div id="grpc-service-select">
+          <select name="grpc-service" id="grpc-service">
+            {{ range .Services }}
+            <option value="{{.}}">{{.}}</option>
+            {{ end }}
+          </select>
+        </div>
+      </div>
+      <div class="grpc-select-group">
+        <label class="grpc-form-label" for="grpc-method">Method</label>
+        <div id="grpc-method-select">
+          <select name="grpc-method" id="grpc-method">
+            <!-- populated by JavaScript when grpc-service is selected -->
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="grpc-descriptions">
+      <button id="grpc-descriptions-toggle">»</button>
+      <pre id="grpc-service-description"></pre>
+      <pre id="grpc-method-description"></pre>
+      <pre id="grpc-service-description-end"></pre>
+    </div>
+  </div>
 
   <div id="grpc-container">
     <div id="grpc-request-examples-container" style="display: none">

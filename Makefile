@@ -12,6 +12,14 @@ export GOWORK=off
 # violations already in the code). They can be useful to catch errors, but
 # they are just too noisy to be a requirement for a CI -- we don't even *want*
 # to fix some of the things they consider to be violations.
+.PHONY: build
+build:
+	go build -ldflags '-X "main.version=dev build $(dev_build_version)"' -o build/grpcui ./cmd/grpcui
+
+.PHONY: run
+run: build
+	./build/grpcui $(ARGS)
+
 .PHONY: ci
 ci: deps checkgofmt checkgenerate vet staticcheck ineffassign predeclared test
 

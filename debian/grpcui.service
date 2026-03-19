@@ -1,0 +1,27 @@
+[Unit]
+Description=Vention fork of gRPC Web UI
+Documentation=https://github.com/fullstorydev/grpcui
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=grpcui
+Group=grpcui
+
+EnvironmentFile=/etc/grpcui/config
+ExecStart=/usr/local/bin/grpcui $GRPCUI_ARGS
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=grpcui
+
+[Install]
+WantedBy=multi-user.target

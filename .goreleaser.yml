@@ -29,3 +29,19 @@ archives:
       {{- with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
     files:
       - LICENSE
+
+nfpms:
+  - id: grpcui
+    package_name: grpcui
+    vendor: Vention
+    homepage: https://github.com/fullstorydev/grpcui
+    maintainer: Vention <dev@vention.io>
+    description: gRPC Web UI — an interactive browser-based UI for gRPC servers.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/grpcui/LICENSE

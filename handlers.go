@@ -27,6 +27,15 @@ import (
 	"github.com/fullstorydev/grpcurl"
 )
 
+// ConnectedMethod pairs a method descriptor with the gRPC connection that
+// should be used to invoke it. This is the building block for multi-server
+// support: each method carries its own connection so the invoke handler can
+// route requests to the correct backend automatically.
+type ConnectedMethod struct {
+	Desc *desc.MethodDescriptor
+	Conn grpc.ClientConnInterface
+}
+
 // RPCInvokeHandler returns an HTTP handler that can be used to invoke RPCs. The
 // request includes request data, header metadata, and an optional timeout.
 //
@@ -72,6 +81,17 @@ type InvokeOptions struct {
 // accepts an additional argument, options. This can be used to add extra
 // request metadata to all RPCs invoked.
 func RPCInvokeHandlerWithOptions(ch grpc.ClientConnInterface, descs []*desc.MethodDescriptor, options InvokeOptions) http.Handler {
+	methods := make([]ConnectedMethod, len(descs))
+	for i, d := range descs {
+		methods[i] = ConnectedMethod{Desc: d, Conn: ch}
+	}
+	return RPCInvokeHandlerForServers(methods, options)
+}
+
+// RPCInvokeHandlerForServers is like RPCInvokeHandlerWithOptions but accepts
+// methods from multiple servers. Each ConnectedMethod carries its own
+// connection, allowing the handler to route each RPC to the correct backend.
+func RPCInvokeHandlerForServers(methods []ConnectedMethod, options InvokeOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.Header().Set("Allow", "POST")
@@ -89,14 +109,30 @@ func RPCInvokeHandlerWithOptions(ch grpc.ClientConnInterface, descs []*desc.Meth
 			method = method[1:]
 		}
 
-		for _, md := range descs {
-			if md.GetFullyQualifiedName() == method {
-				descSource, err := grpcurl.DescriptorSourceFromFileDescriptors(md.GetFile())
+		for _, cm := range methods {
+			if cm.Desc.GetFullyQualifiedName() == method {
+				descSource, err := grpcurl.DescriptorSourceFromFileDescriptors(cm.Desc.GetFile())
 				if err != nil {
 					http.Error(w, "Failed to create descriptor source: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
-				results, err := invokeRPC(r.Context(), method, ch, descSource, r.Header, r.Body, &options)
+				if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+					err := invokeRPCStream(r.Context(), method, cm.Conn, descSource, r.Header, r.Body, &options, w)
+					if err != nil {
+						if _, ok := err.(errReadFail); ok {
+							http.Error(w, "Failed to read request", 499)
+							return
+						}
+						if _, ok := err.(errBadInput); ok {
+							http.Error(w, "Failed to parse JSON: "+err.Error(), http.StatusBadRequest)
+							return
+						}
+						http.Error(w, "Unexpected error: "+err.Error(), http.StatusInternalServerError)
+					}
+					return
+				}
+
+				results, err := invokeRPC(r.Context(), method, cm.Conn, descSource, r.Header, r.Body, &options)
 				if err != nil {
 					if _, ok := err.(errReadFail); ok {
 						http.Error(w, "Failed to read request", 499)
@@ -176,10 +212,11 @@ func RPCMetadataHandler(methods []*desc.MethodDescriptor, files []*desc.FileDesc
 // What if we wanted to load metadata for all methods? We should consider splitting this
 // into 2 separate types for metadata to respond with accordingly.
 type schema struct {
-	RequestType   string                  `json:"requestType"`
-	RequestStream bool                    `json:"requestStream"`
-	MessageTypes  map[string][]fieldDef   `json:"messageTypes"`
-	EnumTypes     map[string][]enumValDef `json:"enumTypes"`
+	RequestType    string                  `json:"requestType"`
+	RequestStream  bool                    `json:"requestStream"`
+	ResponseStream bool                    `json:"responseStream"`
+	MessageTypes   map[string][]fieldDef   `json:"messageTypes"`
+	EnumTypes      map[string][]enumValDef `json:"enumTypes"`
 }
 
 type fieldDef struct {
@@ -261,10 +298,11 @@ func gatherAllMessages(msgs []*desc.MessageDescriptor, result *schema) {
 func gatherMetadataForMethod(md *desc.MethodDescriptor) (*schema, error) {
 	msg := md.GetInputType()
 	result := &schema{
-		RequestType:   msg.GetFullyQualifiedName(),
-		RequestStream: md.IsClientStreaming(),
-		MessageTypes:  map[string][]fieldDef{},
-		EnumTypes:     map[string][]enumValDef{},
+		RequestType:    msg.GetFullyQualifiedName(),
+		RequestStream:  md.IsClientStreaming(),
+		ResponseStream: md.IsServerStreaming(),
+		MessageTypes:   map[string][]fieldDef{},
+		EnumTypes:      map[string][]enumValDef{},
 	}
 
 	result.visitMessage(msg)
@@ -468,6 +506,119 @@ func invokeRPC(ctx context.Context, methodName string, ch grpc.ClientConnInterfa
 	}
 
 	return &result, nil
+}
+
+// rpcStreamHandler implements grpcurl.InvokeRPCHandler and writes SSE events
+// directly to an http.ResponseWriter as each gRPC callback fires.
+type rpcStreamHandler struct {
+	descSource   grpcurl.DescriptorSource
+	emitDefaults bool
+	w            http.ResponseWriter
+	flusher      http.Flusher
+	reqStats     *rpcRequestStats
+}
+
+func (*rpcStreamHandler) OnResolveMethod(*desc.MethodDescriptor) {}
+
+func (*rpcStreamHandler) OnSendHeaders(metadata.MD) {}
+
+func (h *rpcStreamHandler) OnReceiveHeaders(md metadata.MD) {
+	data, _ := json.Marshal(responseMetadata(md))
+	fmt.Fprintf(h.w, "event: headers\ndata: %s\n\n", data)
+	h.flusher.Flush()
+}
+
+func (h *rpcStreamHandler) OnReceiveResponse(m proto.Message) {
+	elem := responseToJSON(h.descSource, m, h.emitDefaults)
+	data, _ := json.Marshal(elem)
+	fmt.Fprintf(h.w, "event: response\ndata: %s\n\n", data)
+	h.flusher.Flush()
+}
+
+func (h *rpcStreamHandler) OnReceiveTrailers(stat *status.Status, md metadata.MD) {
+	type trailersPayload struct {
+		Trailers []rpcMetadata    `json:"trailers"`
+		Error    *rpcError        `json:"error"`
+		Requests *rpcRequestStats `json:"requests"`
+	}
+	payload := trailersPayload{
+		Trailers: responseMetadata(md),
+		Error:    toRpcError(h.descSource, stat, h.emitDefaults),
+		Requests: h.reqStats,
+	}
+	data, _ := json.Marshal(payload)
+	fmt.Fprintf(h.w, "event: trailers\ndata: %s\n\n", data)
+	h.flusher.Flush()
+}
+
+func invokeRPCStream(ctx context.Context, methodName string, ch grpc.ClientConnInterface, descSource grpcurl.DescriptorSource, reqHdrs http.Header, body io.Reader, options *InvokeOptions, w http.ResponseWriter) error {
+	js, err := io.ReadAll(body)
+	if err != nil {
+		return errReadFail{err: err}
+	}
+
+	var input rpcInput
+	if err := json.Unmarshal(js, &input); err != nil {
+		return errBadInput{err: err}
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("response writer does not support streaming")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	reqStats := rpcRequestStats{
+		Total: len(input.Data),
+	}
+	requestFunc := func(m proto.Message) error {
+		if len(input.Data) == 0 {
+			return io.EOF
+		}
+		reqStats.Sent++
+		req := input.Data[0]
+		input.Data = input.Data[1:]
+		if err := jsonpb.Unmarshal(bytes.NewReader(req), m); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil
+	}
+
+	webFormHdrs := make(metadata.MD, len(input.Metadata))
+	for _, hdr := range input.Metadata {
+		webFormHdrs.Append(hdr.Name, hdr.Value)
+	}
+	invokeHdrs := options.computeHeaders(reqHdrs, webFormHdrs)
+
+	if input.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		timeout := time.Duration(input.TimeoutSeconds * float32(time.Second))
+		if timeout < 0 {
+			timeout = time.Duration(math.MaxInt64)
+		}
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	handler := &rpcStreamHandler{
+		descSource:   descSource,
+		emitDefaults: options.EmitDefaults,
+		w:            w,
+		flusher:      flusher,
+		reqStats:     &reqStats,
+	}
+
+	if err := grpcurl.InvokeRPC(ctx, descSource, ch, methodName, invokeHdrs, handler, requestFunc); err != nil {
+		// gRPC-level errors are delivered via OnReceiveTrailers; this covers
+		// transport/connection errors that bypass that callback.
+		data, _ := json.Marshal(map[string]string{"message": err.Error()})
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+	return nil
 }
 
 func (opts *InvokeOptions) overrideHeaders(reqHdrs http.Header) metadata.MD {
