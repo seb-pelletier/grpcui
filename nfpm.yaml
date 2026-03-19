@@ -1,0 +1,25 @@
+name: grpcui
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: Vention <dev@vention.io>
+description: gRPC Web UI — an interactive browser-based UI for gRPC servers.
+vendor: Vention
+homepage: https://github.com/fullstorydev/grpcui
+license: MIT
+
+scripts:
+  preinstall:  ./debian/preinstall.sh
+  postinstall: ./debian/postinstall.sh
+  preremove:   ./debian/preremove.sh
+  postremove:  ./debian/postremove.sh
+
+contents:
+  - src: ./build/grpcui
+    dst: /usr/local/bin/grpcui
+  - src: ./LICENSE
+    dst: /usr/share/doc/grpcui/LICENSE
+  - src: ./debian/grpcui.service
+    dst: /lib/systemd/system/grpcui.service
+    file_info:
+      mode: 0644
