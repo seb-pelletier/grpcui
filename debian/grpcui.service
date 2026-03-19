@@ -9,7 +9,8 @@ Type=simple
 User=grpcui
 Group=grpcui
 
-ExecStart=/usr/local/bin/grpcui
+EnvironmentFile=/etc/grpcui/config
+ExecStart=/usr/local/bin/grpcui $GRPCUI_ARGS
 
 # Restart policy
 Restart=on-failure

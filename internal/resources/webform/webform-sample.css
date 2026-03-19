@@ -10,7 +10,7 @@
   --blue-vivid:  #1d4ed8;
   --navy:        #1c344f;
   --bg:          #f3f4f6;
-  --surface:     #f0f2f5;
+  --surface:     #f7f8fa;
   --border:      #e5e7eb;
   --border-dark: #d1d5db;
   --text-1:      #111827;
@@ -382,7 +382,7 @@ button#grpc-history-save:hover { background: var(--bg); box-shadow: none; }
   font-family: var(--sans);
   font-size: 14px;
   color: var(--text-1);
-  background: var(--surface);
+  background: #333e54 !important;
   border: 1px solid var(--border-dark);
   border-radius: var(--radius-sm);
   outline: none;

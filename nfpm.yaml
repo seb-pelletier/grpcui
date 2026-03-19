@@ -23,3 +23,8 @@ contents:
     dst: /lib/systemd/system/grpcui.service
     file_info:
       mode: 0644
+  - src: ./debian/config/grpcui
+    dst: /etc/grpcui/config
+    type: config|noreplace
+    file_info:
+      mode: 0644

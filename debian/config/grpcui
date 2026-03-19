@@ -1,0 +1,8 @@
+# grpcui configuration
+# Arguments passed directly to the grpcui binary.
+# See: grpcui --help for all available flags.
+#
+# Example:
+#   GRPCUI_ARGS=-plaintext -port 8080 192.168.1.10:50051 192.168.1.11:50051
+#
+GRPCUI_ARGS=-plaintext -port 42069 localhost:50051 localhost:50550 localhost:50500
